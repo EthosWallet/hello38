@@ -1,0 +1,141 @@
+# Test pyproject.toml file to validate all false positive fixes for TOML parsing
+# This file contains all the parsing issues that can occur in pyproject.toml files
+
+[build-system]
+requires = [
+    "setuptools>=45",
+    "wheel",
+    "setuptools; platform_python_implementation != 'PyPy'",  # Semicolon with platform constraint
+]
+
+[project]
+name = "test-package"
+version = "0.1.0"
+description = "Test package for dependency confusion scanner"
+
+# ===== LEGITIMATE PACKAGES THAT SHOULD BE DETECTED AS "EXISTS" =====
+dependencies = [
+    # Issue 1: Semicolon parsing with platform constraints (should extract clean names)
+    "pywin32; platform_system == 'Windows'",
+    "dataclasses; python_version < '3.7'", 
+    "typing-extensions; python_version < '3.8'",
+    "importlib-resources; python_version < '3.9'",
+    "audioop-lts; python_version >= '3.13'",
+    
+    # Issue 2: Version constraints (should extract package name only)
+    "requests>=2.25.0",
+    "urllib3~=1.26.0", 
+    "boto3==1.26.59",
+    "pytest>=6.0",
+    "numpy>=1.20.0,<2.0",
+    
+    # Issue 3: Complex version constraints
+    "pandas>=1.3.0,!=1.4.0",
+    "tensorflow>=2.8.0,<3.0.0",
+    "scikit-learn~=1.1.0",
+    
+    # Issue 4: Legitimate packages that should work
+    "six",
+    "click", 
+    "pyyaml",
+    "jinja2",
+    "python-dateutil",
+]
+
+# Optional dependencies that should also be parsed correctly
+[project.optional-dependencies]
+dev = [
+    "pytest; python_version >= '3.7'",  # Semicolon constraint
+    "black>=22.0",
+    "flake8~=4.0",
+    "mypy>=0.991",
+    "pre-commit>=2.20.0",  # Should extract as 'pre-commit'
+]
+
+test = [
+    "pytest-cov>=3.0.0",
+    "pytest-xdist>=2.5.0", 
+    "coverage[toml]>=6.0",
+    "tox>=3.25.0",
+]
+
+docs = [
+    "sphinx>=5.0.0",
+    "sphinx-rtd-theme>=1.0.0",
+    "myst-parser>=0.18.0",
+]
+
+# ===== POETRY SECTION (should also be parsed) =====
+[tool.poetry]
+name = "test-poetry-package"
+version = "0.1.0"
+
+[tool.poetry.dependencies] 
+python = "^3.8"
+# Legitimate packages with various constraint formats
+fastapi = "^0.95.0"
+uvicorn = {extras = ["standard"], version = "^0.21.0"}
+pydantic = "^1.10.0"
+sqlalchemy = ">=1.4.0,<3.0.0"
+alembic = "^1.10.0"
+
+# Platform-specific dependencies (should extract clean names)
+pywin32 = {version = "^306", markers = "platform_system == 'Windows'"}
+dataclasses = {version = "^0.8", markers = "python_version < '3.7'"}
+
+[tool.poetry.dev-dependencies]
+pytest = "^7.0.0"
+pytest-asyncio = "^0.21.0" 
+httpx = "^0.24.0"
+black = "^23.0.0"
+isort = "^5.12.0"
+
+# Git dependencies (should be handled specially - not false positives)
+special-internal-package = {git = "https://github.com/company/internal-repo.git", branch = "main"}
+
+# ===== FALSE POSITIVES THAT SHOULD BE FILTERED OUT =====
+# These patterns should NOT appear in vulnerability reports
+
+# Note: TOML format doesn't naturally create the same false positives as requirements.txt
+# because it's more structured, but we can simulate some edge cases:
+
+[tool.custom-tool]
+# These aren't dependencies but could be mistakenly parsed
+config-file = "./config/settings.json"  # File path - should not be treated as package
+data-dir = "."                          # Current directory - should not be package
+temp-dir = ".."                         # Parent directory - should not be package
+
+# ===== EXPECTED RESULTS WHEN SCANNING THIS FILE =====
+
+# LEGITIMATE PACKAGES (should verify as EXISTS on PyPI or be flagged as legitimate missing):
+# From [project.dependencies]:
+# - pywin32, dataclasses, typing-extensions, importlib-resources, audioop-lts
+# - requests, urllib3, boto3, pytest, numpy, pandas, tensorflow, scikit-learn
+# - six, click, pyyaml, jinja2, python-dateutil
+
+# From [project.optional-dependencies]:  
+# - pytest, black, flake8, mypy, pre-commit
+# - pytest-cov, pytest-xdist, coverage, tox
+# - sphinx, sphinx-rtd-theme, myst-parser
+
+# From [tool.poetry.dependencies]:
+# - fastapi, uvicorn, pydantic, sqlalchemy, alembic
+# - pywin32, dataclasses (cleaned from markers)
+
+# From [tool.poetry.dev-dependencies]:
+# - pytest, pytest-asyncio, httpx, black, isort
+
+# SHOULD NOT APPEAR (filtered out or handled specially):
+# - "./config/settings.json" (file path in config)
+# - "." or ".." (directory references in config)
+# - "python" (Python itself, usually filtered)
+# - Git dependencies should be handled as GitHub hijacking check, not dependency confusion
+
+# PACKAGE NAMES SHOULD BE CLEAN (no semicolons, no version constraints):
+# ✅ "pywin32" (not "pywin32; platform_system == 'Windows'")
+# ✅ "dataclasses" (not "dataclasses; python_version < '3.7'")
+# ✅ "requests" (not "requests>=2.25.0")
+# ✅ "pre-commit" (not "pre-commit>=2.20.0")
+
+# If you see any version constraints or semicolons in the package names,
+# it means the TOML parsing needs improvement
